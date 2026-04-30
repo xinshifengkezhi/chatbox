@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ApplicationConfig
+  config:
+    import: ""
+  cloud:
+    nacos:
+      config:
+        enabled: false
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3306/account?serverTimezone=UTC
+      username: ${DB_USERNAME:root}
+      password: ${DB_PASSWORD:}
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: false
