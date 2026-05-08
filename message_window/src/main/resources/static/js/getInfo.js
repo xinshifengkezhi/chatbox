@@ -2,6 +2,8 @@ axios.defaults.baseURL = 'http://localhost:8081'
 var vue = new Vue({
     el: '#app',
     data:{
+        ws: null,
+        onlineUserIds: [],
         deleteButton:false,
         friendList : [],         //当前已添加的好友
         addFriendList: [],       //搜索到的用户
@@ -28,11 +30,31 @@ var vue = new Vue({
     created(){
         const userInfoStr = sessionStorage.getItem('chatData');
         this.user = JSON.parse(userInfoStr);
+        const wsUrl = `ws://localhost/chat?userId=${this.user.id}`;
+        this.ws = new WebSocket(wsUrl);
+        this.ws.onopen = () => {
+            console.log('WebSocket 连接成功');
+        };
+
+        this.ws.onmessage = (event) => {
+            this.handleWebSocketMessage(JSON.parse(event.data));
+        };
+
+        this.ws.onerror = (error) => {
+            console.error('WebSocket 错误', error);
+        };
+
+        this.ws.onclose = (event) => {
+            console.log('WebSocket 断开', event.code, event.reason);
+            // 可选：尝试重连
+        };
         document.title = `${this.user.username}的聊天室`;
         this.setFriendList();
     },
     beforeDestroy() {
-        this.websocket.close();
+        if(this.ws){
+            this.ws.close();
+        }
     },
     computed: {
         currentMessages(){
@@ -155,6 +177,25 @@ var vue = new Vue({
                 container.scrollTop = container.scrollHeight;
             }
         },
+        handleWebSocketMessage(data){
+            if (data.system === true){
+                this.onlineUserIds = data.onlineUsers || [];
+            } else {
+                const { fromUserId, content } = data;
+                const  newMsg = {
+                    senderId: parseInt(fromUserId),
+                    receiverId: this.user.id,
+                    content: content,
+                    time: this.getCurrentTime(),
+                }
+                if(this.currentFriend === parseInt(fromUserId)){
+                    this.messageMap.push(newMsg);
+                    this.$nextTick(() => this.scrollToBottom());
+                }else{
+                    console.log(`有新的消息`);
+                }
+            }
+        },
         sendMessage(){
             if (!this.inputMsg.trim()) return;
             if (!this.currentFriend) {
@@ -177,7 +218,14 @@ var vue = new Vue({
                     this.getMessages(this.user.id, this.currentFriend);
                 }
             })
-
+            if(this.ws && this.ws.readyState === WebSocket.OPEN){
+                const wsMessage = {
+                    senderId: this.user.id,
+                    receiverId: this.currentFriend,
+                    content: this.inputMsg
+                };
+                this.ws.send(JSON.stringify(wsMessage));
+            }
         },
         getCurrentTime(){
             const now = new Date();
