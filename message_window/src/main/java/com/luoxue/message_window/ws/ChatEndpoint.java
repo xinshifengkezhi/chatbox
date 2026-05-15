@@ -1,8 +1,7 @@
 package com.luoxue.message_window.ws;
 
-import com.luoxue.message_window.config.GetHttpSessionConfig;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.luoxue.message_window.domain.Messages;
-import org.apache.logging.log4j.util.MessageSupplier;
 import org.springframework.stereotype.Component;
 
 import javax.servlet.http.HttpSession;
@@ -14,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-@ServerEndpoint(value = "/chat", configurator = GetHttpSessionConfig.class)
+@ServerEndpoint(value = "/chat")
 @Component
 public class ChatEndpoint {
 
@@ -22,23 +21,39 @@ public class ChatEndpoint {
     private HttpSession httpSession;
 
     @OnOpen
-    public void onOpen(Session session, EndpointConfig config){
-        this.httpSession = (HttpSession) config.getUserProperties().get(HttpSession.class.getName());
-        //由于登录模块是静态页面，这里需要让websocket链接时带上user用户信息
-        Map<String, List<String>> params = session.getRequestParameterMap();
-        List<String> userIdList = params.get("userId");
-        if (userIdList != null && !userIdList.isEmpty()) {
-            String userId = userIdList.get(0);
-            // 存储该用户对应的 Session
-            onlineUsers.put(userId, session);
-            // 绑定到 session 的用户属性中
-            session.getUserProperties().put("userId", userId);
-            String message = MessageUtils.getMessage(true, null, getFriend());
-            broadCastAllUser(message);
-        } else {
-            // 未提供 userId 则关闭连接
-            try { session.close(new CloseReason(CloseReason.CloseCodes.CANNOT_ACCEPT, "Missing userId")); } catch (
-                    IOException e) {}
+    public void onOpen(Session session, EndpointConfig config) {
+        try {
+            System.out.println("=== WebSocket onOpen 被调用，session id: " + session.getId());
+
+            this.httpSession = (HttpSession) config.getUserProperties().get(HttpSession.class.getName());
+            System.out.println("获取到的 HttpSession: " + this.httpSession);
+
+            Map<String, List<String>> params = session.getRequestParameterMap();
+            System.out.println("请求参数: " + params);
+            List<String> userIdList = params.get("userId");
+            System.out.println("userIdList: " + userIdList);
+
+            if (userIdList != null && !userIdList.isEmpty()) {
+                String userId = userIdList.get(0);
+                System.out.println("解析到的 userId: " + userId);
+
+                onlineUsers.put(userId, session);
+                session.getUserProperties().put("userId", userId);
+                System.out.println("当前在线用户数: " + onlineUsers.size());
+
+                String message = MessageUtils.getMessage(true, null, getFriend());
+                System.out.println("广播消息内容: " + message);
+                broadCastAllUser(message);
+                System.out.println("广播完成");
+            } else {
+                System.out.println("没有 userId 参数，准备关闭连接");
+                session.close(new CloseReason(CloseReason.CloseCodes.CANNOT_ACCEPT, "Missing userId"));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            try {
+                session.close(new CloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, e.getMessage()));
+            } catch (IOException ignored) {}
         }
     }
 
@@ -68,14 +83,21 @@ public class ChatEndpoint {
     }
 
     @OnMessage
-    public void onMessage(Messages message){
-        String userId = String.valueOf(message.getReceiverId());
-        Session session = onlineUsers.get(userId);
-        String mess = MessageUtils.getMessage(false, userId, message.getContent());
+    public void onMessage(String messageText, Session session) {
         try {
-            session.getBasicRemote().sendText(mess);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+            ObjectMapper mapper = new ObjectMapper();
+            Messages message = mapper.readValue(messageText, Messages.class);
+
+            String fromUserId = (String) session.getUserProperties().get("userId");
+            String toUserId = String.valueOf(message.getReceiverId());
+
+            Session targetSession = onlineUsers.get(toUserId);
+            if (targetSession != null && targetSession.isOpen()) {
+                String response = MessageUtils.getMessage(false, fromUserId, message.getContent());
+                targetSession.getBasicRemote().sendText(response);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 

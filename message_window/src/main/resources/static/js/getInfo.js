@@ -30,7 +30,7 @@ var vue = new Vue({
     created(){
         const userInfoStr = sessionStorage.getItem('chatData');
         this.user = JSON.parse(userInfoStr);
-        const wsUrl = `ws://localhost/chat?userId=${this.user.id}`;
+        const wsUrl = `ws://localhost:8081/chat?userId=${this.user.id}`;
         this.ws = new WebSocket(wsUrl);
         this.ws.onopen = () => {
             console.log('WebSocket 连接成功');
@@ -192,7 +192,7 @@ var vue = new Vue({
                     this.messageMap.push(newMsg);
                     this.$nextTick(() => this.scrollToBottom());
                 }else{
-                    console.log(`有新的消息`);
+                    this.$message.success("有新的消息");
                 }
             }
         },
